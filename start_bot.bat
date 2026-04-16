@@ -1,52 +1,55 @@
 @echo off
 TITLE Telegram Debt Bot - Auto Setup
+SETLOCAL EnableExtensions
+
+:: Set code page to UTF-8
 chcp 65001 > nul
 
-:: Kiểm tra Python
+:: Check Python
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ERROR] Python chưa được cài đặt hoặc chưa được thêm vào PATH.
-    echo Vui lòng cài đặt Python tại https://www.python.org/
+    echo [ERROR] Python is not installed or not in PATH.
+    echo Please install Python at https://www.python.org/
     pause
     exit /b
 )
 
-:: Kiểm tra và tạo môi trường ảo
+:: Check and create venv
 if not exist "venv" (
-    echo [INFO] Đang tạo môi trường ảo (venv)...
+    echo [INFO] Creating virtual environment (venv)...
     python -m venv venv
     if %errorlevel% neq 0 (
-        echo [ERROR] Không thể tạo môi trường ảo.
+        echo [ERROR] Failed to create virtual environment.
         pause
         exit /b
     )
-    echo [INFO] Đã tạo venv thành công.
+    echo [INFO] Successfully created venv.
 )
 
-:: Kích hoạt venv và cài đặt dependencies
-echo [INFO] Đang kích hoạt môi trường ảo...
+:: Activate venv and install dependencies
+echo [INFO] Activating virtual environment...
 call venv\Scripts\activate
 
-echo [INFO] Kiểm tra và cập nhật thư viện (requirements.txt)...
+echo [INFO] Checking and installing requirements...
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-:: Kiểm tra file config.json
+:: Check config.json
 if not exist "config.json" (
     if exist "config.json.example" (
-        echo [WARNING] Không tìm thấy config.json. Đang tạo từ bản mẫu...
+        echo [WARNING] config.json not found. Creating from example...
         copy config.json.example config.json
-        echo [IMPORTANT] Hãy mở file config.json và điền BOT_TOKEN của bạn!
+        echo [IMPORTANT] Please open config.json and fill in your BOT_TOKEN!
         notepad config.json
     ) else (
-        echo [ERROR] Thiếu file config.json và config.json.example!
+        echo [ERROR] Missing config.json and config.json.example!
     )
 )
 
-:: Chạy bot
-echo [INFO] Đang khởi động Bot...
+:: Run bot
+echo [INFO] Starting Bot...
 python bot.py
 
 echo.
-echo Bot đã dừng.
+echo Bot stopped.
 pause
