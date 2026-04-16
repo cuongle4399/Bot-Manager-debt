@@ -27,7 +27,7 @@ async def post_init(application):
         asyncio.run_coroutine_threadsafe(send_weekly_reminders(application), application.loop)
 
     scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
-    scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=9, minute=0)
+    scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=12, minute=0)
     scheduler.start()
 
 async def send_weekly_reminders(application):
