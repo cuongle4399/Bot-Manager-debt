@@ -23,14 +23,14 @@ async def post_init(application):
     await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
     
-    def run_monthly_job():
-        asyncio.run_coroutine_threadsafe(send_monthly_reminders(application), application.loop)
+    def run_weekly_job():
+        asyncio.run_coroutine_threadsafe(send_weekly_reminders(application), application.loop)
 
     scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
-    scheduler.add_job(run_monthly_job, 'cron', day=28, hour=9, minute=0)
+    scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=9, minute=0)
     scheduler.start()
 
-async def send_monthly_reminders(application):
+async def send_weekly_reminders(application):
     group_ids = get_all_groups()
     for group_id in group_ids:
         try:
@@ -38,7 +38,7 @@ async def send_monthly_reminders(application):
             if not pair_debts:
                 continue
                 
-            res = "CHOT SO NGAY 28 - TONG HOP CONG NO THANG\n\n"
+            res = "THÔNG BÁO CHỐT NỢ CUỐI TUẦN - CHỦ NHẬT\n\n"
             has_debt = False
             for (u1, u2), amount in pair_debts.items():
                 if amount == 0: continue
