@@ -18,7 +18,8 @@ async def post_init(application):
         BotCommand("admin", "Dành cho Admin/Owner"),
         BotCommand("allpaid", "Tất toán nợ cho ai đó"),
         BotCommand("undo", "Hoàn tác/Reply để xóa"),
-        BotCommand("export", "Xuất file Excel cá nhân")
+        BotCommand("export", "Xuất file Excel cá nhân"),
+        BotCommand("ping", "Kiểm tra hệ thống Bot")
     ]
     await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
@@ -29,6 +30,24 @@ async def post_init(application):
     scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
     scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=12, minute=0)
     scheduler.start()
+
+    # Gửi thông báo Bot online
+    try:
+        from config import OWNER_ID
+        # Luôn thông báo cho Chủ nhân đầu tiên
+        await application.bot.send_message(chat_id=OWNER_ID, text="🚀 **Hệ thống Quản Lý Nợ khởi động thành công!**\n\nMọi chức năng đang chờ lện.", parse_mode="Markdown")
+        
+        # Quét danh sách nhóm có dữ liệu để báo
+        group_ids = get_all_groups()
+        if group_ids:
+            for gid in group_ids:
+                try:
+                    await application.bot.send_message(chat_id=gid, text="🟢 **Hệ thống Quản Lý Nợ đã cập nhật/online!**\nSẵn sàng nhận lệnh.", parse_mode="Markdown")
+                except Exception:
+                    pass
+    except Exception as e:
+        logging.error(f"Loi lay danh sach nhom de bao online: {e}")
+
 
 async def send_weekly_reminders(application):
     group_ids = get_all_groups()
@@ -92,6 +111,8 @@ def main():
     application.add_handler(PrefixHandler(prefixes, "clear", command_handler.clear_command))
     application.add_handler(PrefixHandler(prefixes, "export", command_handler.export_command))
     application.add_handler(PrefixHandler(prefixes, "exportno", command_handler.exportno_command))
+    application.add_handler(PrefixHandler(prefixes, "ping", command_handler.ping_command))
+    application.add_handler(PrefixHandler(prefixes, "rstbot", command_handler.rstbot_command))
     
     text_filter = filters.TEXT & (~filters.COMMAND)
     application.add_handler(MessageHandler(text_filter, debt_handler.handle_message))

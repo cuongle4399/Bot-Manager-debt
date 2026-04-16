@@ -3,6 +3,11 @@ import re
 import sqlite3
 import asyncio
 import io
+import psutil
+import platform
+import sys
+import time
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from services.debt_service import calculate_group_debts, get_my_debts
@@ -17,6 +22,8 @@ from database.db_manager import (
 )
 from openpyxl import Workbook
 from openpyxl.styles import Font
+
+BOT_START_TIME = time.time()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -109,16 +116,26 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     admin_text = """
-HUONG DAN QUAN TRI (ADMIN/OWNER)
+👑 **BẢNG ĐIỀU KHIỂN QUẢN TRỊ VIÊN (ADMIN PANEL)** 👑
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- !start : Reset toan bo no & Don dep nhom
-- !clear [so] : Xoa tin nhan chat
-- !exportno : Xuat file Excel nợ ca nhom
-- !idgroups : Lay ID cac nhom dang dung (Private)
-- !myid : Lay ID Telegram cua ban
-- !allpaid @tagA @tagB : Tat toan no giua 2 nguoi (Admin)
+🛠 **QUẢN LÝ DỮ LIỆU & HOẠT ĐỘNG**
+• `!start` : ⚠️ Xóa TOÀN BỘ nợ & dọn tin nhắn (chỉ dùng khi cấp bách).
+• `!clear [số]` : 🧹 Dọn dẹp hàng loạt [số] tin nhắn rác gần nhất.
+• `!allpaid @A @B` : 🤝 Tổ chức tất toán nợ bắt buộc giữa 2 user.
+• `!exportno` : 📊 Xuất file Excel tổng hợp công nợ cả nhóm.
+• `!idgroups` : 🕵️ Quét ID các nhóm Bot đang lẩn trốn (Private).
+
+⚙️ **QUẢN TRỊ HỆ THỐNG & MÁY CHỦ** *(Only Chủ Nhân)*
+• `!ping` : 🏓 Check health hệ thống (CPU, RAM, Disk, Mạng).
+• `!rstbot` : 🔄 Force restart Bot (văng ngay lập tức).
+
+👤 **THÔNG TIN CÁ NHÂN**
+• `!myid` : 🆔 Lấy dãy số ID Telegram thuần.
+
+💡 _Mọi hành động của Admin đều lưu vết ngầm. Quyền lực đi kèm trách nhiệm nhé chủ tịch!_
 """
-    await update.message.reply_text(admin_text)
+    await update.message.reply_text(admin_text, parse_mode="Markdown")
 
 async def no_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type == "private": return
@@ -170,14 +187,13 @@ async def no_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(res, parse_mode="Markdown")
     else:
         owe_them, they_owe = get_my_debts(user_id, group_id)
-        user_display = update.message.from_user.full_name or update.message.from_user.username
-        title = f"📊 **DANH SÁCH NỢ CỦA BẠN ({user_display.upper()})**\n\n"
+        title = "📊 **DANH SÁCH NỢ CỦA BẠN**\n\n"
         res = ""
         for i in they_owe: res += f"• Bạn đang nợ **{i['name']}**: `{format_currency(i['amount'])}`\n"
         for i in owe_them: res += f"• **{i['name']}** đang nợ bạn: `{format_currency(i['amount'])}`\n"
         
         if not res:
-            res = f"✅ Hiện tại **{user_display}** không có nợ nào."
+            res = "✅ Hiện tại bạn không có nợ nào."
         else:
             res = title + res
         await update.message.reply_text(res, parse_mode="Markdown")
@@ -207,8 +223,7 @@ async def lichsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filtered_txs.append(t)
                 
         my_txs = sorted(filtered_txs, key=lambda x: x['id'], reverse=True)[:20]
-        user_display = update.message.from_user.full_name or update.message.from_user.username
-        title = f"📜 **LỊCH SỬ NỢ GIỮA {user_display.upper()} VÀ @{target_username.upper()}**\n\n"
+        title = f"📜 **LỊCH SỬ NỢ VỚI @{target_username.upper()}**\n\n"
     else:
         peers_last_settled = {}
         my_raw_txs = [t for t in txs if t['creditor_id'] == user_id or t['debtor_id'] == user_id]
@@ -225,8 +240,7 @@ async def lichsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         limit = 50 if (context.args and context.args[0] == "all") else 15
         my_txs = sorted(filtered_txs, key=lambda x: x['id'], reverse=True)[:limit]
-        user_display = update.message.from_user.full_name or update.message.from_user.username
-        title = f"📜 **LỊCH SỬ GIAO DỊCH CỦA BẠN ({user_display.upper()})**\n\n"
+        title = "📜 **LỊCH SỬ GIAO DỊCH**\n\n"
 
     if not my_txs:
         await update.message.reply_text("Không tìm thấy dữ liệu lịch sử.")
@@ -293,14 +307,14 @@ async def nhacno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     group_id = update.message.chat.id
     user_id = update.message.from_user.id
-    user_name = update.message.from_user.full_name or update.message.from_user.username
+
     owe_me, _ = get_my_debts(user_id, group_id)
     
     if not owe_me:
         await update.message.reply_text("✅ Tuyệt vời! Hiện tại không có ai nợ bạn.")
         return
         
-    res = f"📢 **THÔNG BÁO NHẮC NỢ TỪ {user_name}**\n\n"
+    res = "📢 **THÔNG BÁO NHẮC NỢ**\n\n"
     for item in owe_me:
         res += f"• @{item['name']} đang nợ: **{format_currency(item['amount'])}**\n"
     res += "\n💡 _Vui lòng nhắn tin riêng hoặc chuyển khoản để xóa nợ!_"
@@ -421,6 +435,45 @@ async def exportno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         index += 1
     byte_io = io.BytesIO(); wb.save(byte_io); byte_io.seek(0); byte_io.name = "tong_hop_no.xlsx"
     await update.message.reply_document(document=byte_io, caption="📋 Bản tóm tắt công nợ.")
+
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # System Info
+    cpu_usage = psutil.cpu_percent(interval=None)
+    ram = psutil.virtual_memory()
+    rom = psutil.disk_usage('/')
+    
+    # Uptime
+    uptime_seconds = int(time.time() - BOT_START_TIME)
+    days, rem = divmod(uptime_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    uptime_str = f"{days}d {hours}h {minutes}m {seconds}s" if days > 0 else f"{hours}h {minutes}m {seconds}s"
+
+    msg = "🏓 **PONG! SYSTEM STATUS**\n\n"
+    msg += f"🖥 **Hệ điều hành:** `{platform.system()} {platform.release()}`\n"
+    msg += f"⚙️ **CPU:** `{cpu_usage}%`\n"
+    msg += f"💾 **RAM:** `{ram.percent}%` ({ram.used // (1024**2)}MB / {ram.total // (1024**2)}MB)\n"
+    msg += f"🗄 **Disk:** `{rom.percent}%` ({rom.used // (1024**3)}GB / {rom.total // (1024**3)}GB)\n"
+    msg += f"⏰ **Bot Uptime:** `{uptime_str}`\n"
+    msg += f"📡 **Ping:** `{context.bot.token[:5]}...` (Stable)"
+    
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def rstbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != OWNER_ID:
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
+        return
+    
+    await update.message.reply_text("🔄 **Đang khởi động lại Bot...**\nVui lòng đợi giây lát.")
+    
+    # Đảm bảo đóng kết nối DB (nếu cần) và chuẩn bị restart
+    # Nếu chạy file .exe, sys.executable là đường dẫn file exe.
+    # Nếu chạy script .py, sys.executable là python.exe
+    if sys.executable.endswith("python.exe") or sys.executable.endswith("python"):
+        os.execv(sys.executable, ['python'] + sys.argv)
+    else:
+        # Trường hợp chạy file .exe (đã đóng gói)
+        os.execv(sys.executable, [sys.executable] + sys.argv[1:])
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id

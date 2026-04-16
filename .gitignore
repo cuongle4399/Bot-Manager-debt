@@ -17,7 +17,7 @@ database/*.sqlite
 # Logs
 logs/
 *.log
-
+*.exe
 # Project specific
 *.xlsx
 .vscode/
