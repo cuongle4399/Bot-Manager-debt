@@ -1,9 +1,8 @@
 @echo off
 TITLE Telegram Debt Bot - Auto Setup
-SETLOCAL EnableExtensions
 
-:: Set code page to UTF-8
-chcp 65001 > nul
+echo [DEBUG] Script started...
+pause
 
 :: Check Python
 python --version >nul 2>&1

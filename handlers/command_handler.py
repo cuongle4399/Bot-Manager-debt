@@ -22,11 +22,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id == OWNER_ID:
         try:
-            conn = sqlite3.connect("database/bot_debt.db")
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM transactions")
-            conn.commit()
-            conn.close()
+            from database.db_manager import get_db
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM transactions")
+                conn.commit()
             
             current_msg_id = update.message.id
             count = 0
@@ -368,19 +368,40 @@ async def allpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    txs = get_debts_in_group(update.message.chat.id)
-    my_txs = [t for t in txs if t['creditor_id'] == user_id or t['debtor_id'] == user_id]
+    group_id = update.message.chat.id
+    txs = get_debts_in_group(group_id)
+    
+    # Logic lọc y hệt như !ls (chỉ lấy từ lần tất toán gần nhất của mỗi cặp)
+    peers_last_settled = {}
+    my_raw_txs = [t for t in txs if t['creditor_id'] == user_id or t['debtor_id'] == user_id]
+    for t in my_raw_txs:
+        if "[TẤT TOÁN]" in t['reason']:
+            peer = t['creditor_name'] if t['debtor_id'] == user_id else t['debtor_name']
+            peers_last_settled[peer.lower()] = max(peers_last_settled.get(peer.lower(), 0), t['id'])
+    
+    my_txs = []
+    for t in my_raw_txs:
+        peer = t['creditor_name'] if t['debtor_id'] == user_id else t['debtor_name']
+        if t['id'] >= peers_last_settled.get(peer.lower(), 0):
+            my_txs.append(t)
+            
     if not my_txs:
-        await update.message.reply_text("Không có dữ liệu.")
+        await update.message.reply_text("Không có dữ liệu nợ hiện tại để xuất.")
         return
+        
     wb = Workbook(); ws = wb.active; ws.title = "Lich Su No"
     ws.append(["ID", "Thời Gian", "Người Cho Nợ", "Người Nợ", "Số Tiền", "Lý Do"])
     for cell in ws[1]: cell.font = Font(bold=True)
+    
+    # Sắp xếp ID từ nhỏ đến lớn trong Excel để dễ theo dõi
+    my_txs.sort(key=lambda x: x['id'])
+    
     for t in my_txs:
         date_str = t['created_at'].split(".")[0] if isinstance(t['created_at'], str) else t['created_at'].strftime("%Y-%m-%d %H:%M")
         ws.append([t['id'], date_str, t['creditor_name'], t['debtor_name'], t['amount'], t['reason']])
+        
     byte_io = io.BytesIO(); wb.save(byte_io); byte_io.seek(0); byte_io.name = "lich_su_no.xlsx"
-    await update.message.reply_document(document=byte_io, caption="📊 File Excel lịch sử nợ.")
+    await update.message.reply_document(document=byte_io, caption="📊 File Excel lịch sử nợ hiện tại (sau tất toán).")
 
 async def exportno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.message.chat.id
