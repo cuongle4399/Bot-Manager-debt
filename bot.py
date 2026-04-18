@@ -12,13 +12,14 @@ from utils.parser import format_currency
 
 async def post_init(application):
     commands = [
-        BotCommand("no", "Xem nợ cá nhân"),
+        BotCommand("no", "Xem nợ cá nhân/ai đó"),
         BotCommand("ls", "Lịch sử nợ chưa tất toán"),
         BotCommand("help", "Xem hướng dẫn member"),
         BotCommand("admin", "Dành cho Admin/Owner"),
-        BotCommand("allpaid", "Tất toán nợ cho ai đó"),
+        BotCommand("allpaid", "Tất toán nợ"),
         BotCommand("undo", "Hoàn tác/Reply để xóa"),
-        BotCommand("export", "Xuất file Excel cá nhân"),
+        BotCommand("export", "Excel lịch sử cá nhân"),
+        BotCommand("exportno", "Excel tổng hợp nợ nhóm"),
         BotCommand("ping", "Kiểm tra hệ thống Bot")
     ]
     await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
