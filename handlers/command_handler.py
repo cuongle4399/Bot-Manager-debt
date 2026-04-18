@@ -60,9 +60,7 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"ID Telegram của bạn: `{update.message.from_user.id}`", parse_mode="Markdown")
 
 async def idgroups_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    member = await context.bot.get_chat_member(update.message.chat.id, update.message.from_user.id)
-    is_admin = (update.message.from_user.id == OWNER_ID) or (member.status in ["administrator", "creator"])
-    if not is_admin:
+    if update.message.from_user.id != OWNER_ID:
         return
         
     group_ids = get_all_groups()
@@ -87,7 +85,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📊 **TRA CỨU THÔNG TIN:**
 • `!no` : Xem danh sách các khoản nợ của chính bạn
 • `!no all` : Xem tổng hợp công nợ của tất cả thành viên
-• `!no @user` : Tra cứu nhanh công nợ của một ai đó
 • `!ls` : Xem lịch sử giao dịch gần đây của bạn
 • `!ls @user` : Xem lịch sử nợ chi tiết giữa bạn và @user
 • `!myid` : Lấy ID Telegram của bạn
@@ -95,41 +92,39 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📢 **NHẮC NỢ & THANH TOÁN:**
 • `!nhacno` : Gửi tin nhắn nhắc nhở tất cả những ai đang nợ bạn
 • `!allpaid @user` : Xác nhận @user đã trả hết sạch nợ cho bạn
-• `!allpaid @A @B` : Tất toán nợ hộ cho cặp đôi bất kỳ
 • `!undo` : Hoàn tác (xóa) đơn nợ vừa ghi 
    _(Hoặc Reply tin nhắn nợ bất kỳ và gõ !undo để xóa đơn đó)_
 
 📥 **TIỆN ÍCH:**
 • `!export` : Xuất file Excel lịch sử nợ cá nhân để đối soát
-• `!exportno` : Xuất file Excel tổng hợp nợ toàn nhóm
 
-💡 *Lưu ý: Mọi thành viên đều có quyền tra cứu và tất toán để hỗ trợ nhau.*
+💡 *Lưu ý: Bạn chỉ có thể hoàn tác hoặc tất toán các khoản nợ liên quan đến chính mình.*
 """
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    member = await context.bot.get_chat_member(update.message.chat.id, user_id)
-    is_admin = (user_id == OWNER_ID) or (member.status in ["administrator", "creator"])
-        
-    if not is_admin:
-        await update.message.reply_text("❌ Lệnh này chỉ dành cho Admin của nhóm hoặc Chủ nhân Bot.")
+    if user_id != OWNER_ID:
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân Bot.")
         return
         
     admin_text = """
-👑 **BẢNG ĐIỀU KHIỂN QUẢN TRỊ VIÊN (ADMIN PANEL)** 👑
+👑 **BẢNG ĐIỀU KHIỂN CHỦ NHÂN (OWNER PANEL)** 👑
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🛠 **QUẢN LÝ DỮ LIỆU & HOẠT ĐỘNG**
-• `!clear [số]` : 🧹 Dọn dẹp hàng loạt [số] tin nhắn rác gần nhất.
-• `!idgroups` : 🕵️ Quét ID các nhóm Bot đang lẩn trốn (Private).
-• `!ping` : 🏓 Check health hệ thống (CPU, RAM, Disk, Mạng).
+• `!clear [số]` : 🧹 Dọn dẹp hàng loạt tin nhắn rác.
+• `!allpaid @A @B` : 🤝 Tất toán nợ hộ cho 2 user bất kỳ.
+• `!exportno` : 📊 Xuất file Excel tổng hợp công nợ cả nhóm.
+• `!idgroups` : 🕵️ Quét ID các nhóm Bot đang hoạt động.
+• `!no @user` : 🔍 Kiểm tra nợ của một thành viên bất kỳ.
 
-⚙️ **QUẢN TRỊ RIÊNG CHỦ NHÂN**
+⚙️ **QUẢN TRỊ HỆ THỐNG & MÁY CHỦ**
 • `!start` : ⚠️ Xóa TOÀN BỘ nợ & dọn tin nhắn.
+• `!ping` : 🏓 Check health hệ thống.
 • `!rstbot` : 🔄 Force restart Bot.
 
-💡 *Các lệnh như !no @user, !allpaid @A @B, !exportno nay đã được mở cho tất cả thành viên.*
+💡 _Chỉ Chủ nhân có ID trùng khớp trong cấu hình mới sử dụng được các lệnh này._
 """
     await update.message.reply_text(admin_text, parse_mode="Markdown")
 
@@ -138,8 +133,7 @@ async def no_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id, user_id = update.message.chat.id, update.message.from_user.id
     tags = re.findall(r"@(\w+)", update.message.text)
     
-    member_status = await context.bot.get_chat_member(group_id, user_id)
-    is_admin = (user_id == OWNER_ID) or (member_status.status in ["administrator", "creator"])
+    is_owner = (user_id == OWNER_ID)
 
     if len(tags) >= 2:
         u1_name, u2_name = tags[0], tags[1]
@@ -156,7 +150,7 @@ async def no_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await update.message.reply_text(f"@{u1_name} dang no @{u2_name}: {format_currency(abs(amount))}")
         return
 
-    if len(tags) == 1:
+    if len(tags) == 1 and is_owner:
         t_id = find_user_id_by_username(tags[0])
         if not t_id: return
         owe_them, they_owe = get_my_debts(t_id, group_id)
@@ -326,10 +320,12 @@ async def allpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     group_id, user_id = update.message.chat.id, update.message.from_user.id
-    member_status = await context.bot.get_chat_member(group_id, user_id)
-    is_admin = (user_id == OWNER_ID) or (member_status.status in ["administrator", "creator"])
+    is_owner = (user_id == OWNER_ID)
 
     if len(tags) >= 2:
+        if not is_owner:
+            await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
+            return
         u1_name, u2_name = tags[0], tags[1]
         u1_id, u2_id = find_user_id_by_username(u1_name), find_user_id_by_username(u2_name)
         if not u1_id or not u2_id:
@@ -478,10 +474,8 @@ async def rstbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    member = await context.bot.get_chat_member(update.message.chat.id, user_id)
-    is_admin = (user_id == OWNER_ID) or (member.status in ["administrator", "creator"])
-    if not is_admin:
-        await update.message.reply_text("❌ Lệnh này dành cho Admin/Chủ nhân!")
+    if user_id != OWNER_ID:
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
         return
     amount = int(context.args[0]) if context.args else 10
     if amount > 100: amount = 100
