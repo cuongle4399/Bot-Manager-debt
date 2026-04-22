@@ -35,14 +35,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == OWNER_ID:
         if chat_type != "private":
             group_id = update.message.chat.id
-            # Thực hiện reset toàn bộ dữ liệu của group
+            message_id = update.message.message_id
+            
+            # 1. Thực hiện reset toàn bộ dữ liệu của group trong DB
             deleted_count = clear_group_data(group_id)
             
+            # 2. Thực hiện dọn dẹp tin nhắn (Quét ngược 200 tin nhắn gần nhất)
+            # Xóa chính tin nhắn lệnh !start
+            try: await context.bot.delete_message(group_id, message_id)
+            except: pass
+            
+            cleared_msgs = 0
+            for i in range(1, 201):
+                try:
+                    await context.bot.delete_message(group_id, message_id - i)
+                    cleared_msgs += 1
+                    # Rate limit protection: nghỉ ngắn sau mỗi 10 tin nhắn
+                    if cleared_msgs % 10 == 0:
+                        await asyncio.sleep(0.3)
+                except:
+                    continue
+            
             msg = (
-                "⚠️ **HỆ THỐNG ĐÃ ĐƯỢC RESET**\n\n"
-                "Toàn bộ dữ liệu nợ và lịch sử giao dịch trong nhóm này đã được dọn dẹp sạch sẽ bởi Sư phụ.\n"
-                f"Số lượng bản ghi đã xóa: `{deleted_count}`\n\n"
-                "Chúc mọi người bắt đầu một chu kỳ tài chính mới vui vẻ! 💸"
+                "⚠️ **HỆ THỐNG ĐÃ ĐƯỢC RESET TOÀN DIỆN**\n\n"
+                f"• **Dữ liệu nợ:** Đã xóa sạch `{deleted_count}` bản ghi.\n"
+                f"• **Tin nhắn:** Đã dọn dẹp `{cleared_msgs}` tin nhắn gần đây.\n\n"
+                "Sư phụ đã dọn dẹp sạch sẽ, chúc mọi người bắt đầu chu kỳ mới vui vẻ! 💸"
             )
             await update.message.reply_text(msg, parse_mode="Markdown")
         else:
