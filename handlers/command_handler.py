@@ -46,15 +46,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             
             cleared_msgs = 0
-            for i in range(1, 201):
-                try:
-                    await context.bot.delete_message(group_id, message_id - i)
-                    cleared_msgs += 1
-                    # Rate limit protection: nghỉ ngắn sau mỗi 10 tin nhắn
-                    if cleared_msgs % 10 == 0:
-                        await asyncio.sleep(0.3)
-                except:
-                    continue
+            # Tối ưu: Chia nhỏ 500 tin nhắn thành các cụm 30 để xóa song song (Parallel deletion)
+            chunk_size = 30
+            for i in range(1, 501, chunk_size):
+                # Tạo danh sách các tác vụ xóa trong cụm này
+                tasks = []
+                for j in range(i, min(i + chunk_size, 501)):
+                    tasks.append(context.bot.delete_message(group_id, message_id - j))
+                
+                # Thực hiện xóa song song cả cụm
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Đếm số tin nhắn xóa thành công (không có lỗi)
+                cleared_msgs += sum(1 for r in results if r is True)
+                
+                # Nghỉ ngắn giữa các cụm để tránh bị Telegram đánh dấu spam (Flood limit)
+                await asyncio.sleep(0.4)
             
             msg = (
                 "⚠️ **HỆ THỐNG ĐÃ ĐƯỢC RESET TOÀN DIỆN**\n\n"
@@ -482,18 +489,32 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Lệnh này chỉ dành cho Sư phụ!")
         return
     amount = int(context.args[0]) if context.args else 10
-    if amount > 100: amount = 100
+    # Cho phép dọn dẹp tối đa 500 tin nhắn một lần
+    if amount > 500: amount = 500
+    
     chat_id, message_id = update.message.chat.id, update.message.message_id
-    await context.bot.delete_message(chat_id, message_id)
+    
+    # Xóa chính tin nhắn lệnh !clear
+    try: await context.bot.delete_message(chat_id, message_id)
+    except: pass
+
     deleted = 0
-    for i in range(1, amount + 1):
-        try:
-            await context.bot.delete_message(chat_id, message_id - i)
-            deleted += 1
-            # Rate limit protection
-            if deleted % 5 == 0:
-                await asyncio.sleep(0.5)
-        except: continue
+    scan_range = int(amount * 1.2)
+    chunk_size = 25 # Cụm nhỏ hơn cho lệnh clear để mượt hơn
+    
+    for i in range(1, scan_range + 1, chunk_size):
+        if deleted >= amount: break
+        
+        tasks = []
+        for j in range(i, min(i + chunk_size, scan_range + 1)):
+            if deleted + len(tasks) >= amount: break
+            tasks.append(context.bot.delete_message(chat_id, message_id - j))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        success_in_chunk = sum(1 for r in results if r is True)
+        deleted += success_in_chunk
+        
+        await asyncio.sleep(0.3)
     info_msg = await context.bot.send_message(chat_id, f"🧹 Đã dọn dẹp {deleted} tin nhắn!")
     await asyncio.sleep(3)
     await context.bot.delete_message(chat_id, info_msg.message_id)
