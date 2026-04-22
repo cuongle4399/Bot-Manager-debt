@@ -20,7 +20,8 @@ from database.db_manager import (
     get_debts_in_group, 
     get_transactions_by_user,
     delete_transaction, 
-    save_transaction
+    save_transaction,
+    clear_group_data
 )
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -29,10 +30,23 @@ BOT_START_TIME = time.time()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    chat_type = update.message.chat.type
+    
     if user_id == OWNER_ID:
-        # Xóa lệnh reset tự động cực kỳ nguy hiểm này. 
-        # Nếu muốn reset hãy dùng lệnh chuyên biệt hoặc truy cập DB.
-        await update.message.reply_text("Chào Chủ nhân! Hệ thống đang hoạt động ổn định. Gõ !admin để xem các lệnh quản trị.")
+        if chat_type != "private":
+            group_id = update.message.chat.id
+            # Thực hiện reset toàn bộ dữ liệu của group
+            deleted_count = clear_group_data(group_id)
+            
+            msg = (
+                "⚠️ **HỆ THỐNG ĐÃ ĐƯỢC RESET**\n\n"
+                "Toàn bộ dữ liệu nợ và lịch sử giao dịch trong nhóm này đã được dọn dẹp sạch sẽ bởi Sư phụ.\n"
+                f"Số lượng bản ghi đã xóa: `{deleted_count}`\n\n"
+                "Chúc mọi người bắt đầu một chu kỳ tài chính mới vui vẻ! 💸"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("Chào Sư phụ! Hệ thống đang hoạt động ổn định. Gõ !admin để xem các lệnh quản trị.")
     else:
         await update.message.reply_text("Bot Quản Lý Công Nợ đã sẵn sàng. Gõ !help để xem hướng dẫn.")
 
@@ -85,11 +99,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id != OWNER_ID:
-        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân Bot.")
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Sư phụ Bot.")
         return
         
     admin_text = """
-👑 **BẢNG ĐIỀU KHIỂN CHỦ NHÂN (OWNER PANEL)** 👑
+👑 **BẢNG ĐIỀU KHIỂN SƯ PHỤ (OWNER PANEL)** 👑
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🛠 **QUẢN LÝ DỮ LIỆU & HOẠT ĐỘNG**
@@ -104,7 +118,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `!ping` : 🏓 Check health hệ thống.
 • `!rstbot` : 🔄 Force restart Bot.
 
-💡 _Chỉ Chủ nhân có ID trùng khớp trong cấu hình mới sử dụng được các lệnh này._
+💡 _Chỉ Sư phụ có ID trùng khớp trong cấu hình mới sử dụng được các lệnh này._
 """
     await update.message.reply_text(admin_text, parse_mode="Markdown")
 
@@ -296,7 +310,7 @@ async def allpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(tags) >= 2:
         if not is_owner:
-            await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
+            await update.message.reply_text("❌ Lệnh này chỉ dành cho Sư phụ!")
             return
         u1_name, u2_name = tags[0], tags[1]
         u1_id, u2_id = find_user_id_by_username(u1_name), find_user_id_by_username(u2_name)
@@ -422,7 +436,7 @@ async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def rstbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != OWNER_ID:
-        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Sư phụ!")
         return
     
     await update.message.reply_text("🔄 **Đang khởi động lại Bot...**\nVui lòng đợi giây lát.")
@@ -447,7 +461,7 @@ async def rstbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id != OWNER_ID:
-        await update.message.reply_text("❌ Lệnh này chỉ dành cho Chủ nhân!")
+        await update.message.reply_text("❌ Lệnh này chỉ dành cho Sư phụ!")
         return
     amount = int(context.args[0]) if context.args else 10
     if amount > 100: amount = 100

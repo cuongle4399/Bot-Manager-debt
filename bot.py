@@ -32,7 +32,7 @@ async def post_init(application):
     scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=12, minute=0)
     scheduler.start()
 
-    # Gửi thông báo Bot online cho Chủ nhân
+    # Gửi thông báo Bot online cho Sư phụ
     try:
         from config import OWNER_ID
         await application.bot.send_message(

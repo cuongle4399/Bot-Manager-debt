@@ -124,3 +124,11 @@ def get_all_groups():
     with get_db() as conn:
         rows = conn.execute('SELECT DISTINCT group_id FROM transactions').fetchall()
         return [row[0] for row in rows]
+
+def clear_group_data(group_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM transactions WHERE group_id = ?', (group_id,))
+        count = cursor.rowcount
+        conn.commit()
+        return count
