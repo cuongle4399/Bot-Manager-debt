@@ -32,22 +32,16 @@ async def post_init(application):
     scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=12, minute=0)
     scheduler.start()
 
-    # Gửi thông báo Bot online
+    # Gửi thông báo Bot online cho Chủ nhân
     try:
         from config import OWNER_ID
-        # Luôn thông báo cho Chủ nhân đầu tiên
-        await application.bot.send_message(chat_id=OWNER_ID, text="🚀 **Hệ thống Quản Lý Nợ khởi động thành công!**\n\nMọi chức năng đang chờ lện.", parse_mode="Markdown")
-        
-        # Quét danh sách nhóm có dữ liệu để báo
-        group_ids = get_all_groups()
-        if group_ids:
-            for gid in group_ids:
-                try:
-                    await application.bot.send_message(chat_id=gid, text="🟢 **Hệ thống Quản Lý Nợ đã cập nhật/online!**\nSẵn sàng nhận lệnh.", parse_mode="Markdown")
-                except Exception:
-                    pass
+        await application.bot.send_message(
+            chat_id=OWNER_ID, 
+            text="🚀 **Hệ thống Quản Lý Nợ khởi động thành công!**\n\nMọi chức năng đang chờ lệnh.", 
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        logging.error(f"Loi lay danh sach nhom de bao online: {e}")
+        logging.error(f"Loi bao online cho owner: {e}")
 
 
 async def send_weekly_reminders(application):
