@@ -16,7 +16,9 @@ from config import OWNER_ID
 from database.db_manager import (
     get_all_groups, 
     find_user_id_by_username, 
+    get_user_id_or_pseudo,
     get_debts_in_group, 
+    get_transactions_by_user,
     delete_transaction, 
     save_transaction
 )
@@ -28,33 +30,11 @@ BOT_START_TIME = time.time()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id == OWNER_ID:
-        try:
-            from database.db_manager import get_db
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM transactions")
-                conn.commit()
-            
-            current_msg_id = update.message.id
-            count = 0
-            streak_fail = 0
-            for i in range(1, 501):
-                try:
-                    await context.bot.delete_message(chat_id=update.message.chat.id, message_id=current_msg_id - i)
-                    count += 1
-                    streak_fail = 0
-                    if count % 10 == 0:
-                        await asyncio.sleep(0.05)
-                except:
-                    streak_fail += 1
-                    if streak_fail >= 15:
-                        break
-                    continue
-            await update.message.reply_text(f"HE THONG DA RESET. Da xoa toan bo no va {count} tin nhan.")
-        except Exception as e:
-            await update.message.reply_text(f"Loi khi reset: {e}")
+        # Xóa lệnh reset tự động cực kỳ nguy hiểm này. 
+        # Nếu muốn reset hãy dùng lệnh chuyên biệt hoặc truy cập DB.
+        await update.message.reply_text("Chào Chủ nhân! Hệ thống đang hoạt động ổn định. Gõ !admin để xem các lệnh quản trị.")
     else:
-        await update.message.reply_text("Bot Quan Ly Cong No da san sang. Go !help de xem huong dan.")
+        await update.message.reply_text("Bot Quản Lý Công Nợ đã sẵn sàng. Gõ !help để xem hướng dẫn.")
 
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"ID Telegram của bạn: `{update.message.from_user.id}`", parse_mode="Markdown")
@@ -137,28 +117,29 @@ async def no_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(tags) >= 2:
         u1_name, u2_name = tags[0], tags[1]
-        u1_id, u2_id = find_user_id_by_username(u1_name), find_user_id_by_username(u2_name)
+        u1_id, u2_id = get_user_id_or_pseudo(u1_name), get_user_id_or_pseudo(u2_name)
         if not u1_id or not u2_id:
-            await update.message.reply_text("Khong tim thay du lieu 1 trong 2 nguoi.")
+            await update.message.reply_text("Không tìm thấy dữ liệu.")
             return
         pair_debts, _ = calculate_group_debts(group_id)
         key = tuple(sorted((u1_id, u2_id)))
         amount = pair_debts.get(key, 0)
         if u1_id > u2_id: amount = -amount
-        if amount == 0: await update.message.reply_text(f"@{u1_name} va @{u2_name} dang hoa nhau.")
-        elif amount > 0: await update.message.reply_text(f"@{u2_name} dang no @{u1_name}: {format_currency(amount)}")
-        else: await update.message.reply_text(f"@{u1_name} dang no @{u2_name}: {format_currency(abs(amount))}")
+        if amount == 0: await update.message.reply_text(f"@{u1_name} và @{u2_name} đang hòa nhau.")
+        elif amount > 0: await update.message.reply_text(f"@{u2_name} đang nợ @{u1_name}: {format_currency(amount)}")
+        else: await update.message.reply_text(f"@{u1_name} đang nợ @{u2_name}: {format_currency(abs(amount))}")
         return
 
     if len(tags) == 1 and is_owner:
-        t_id = find_user_id_by_username(tags[0])
+        t_name = tags[0]
+        t_id = get_user_id_or_pseudo(t_name)
         if not t_id: return
         owe_them, they_owe = get_my_debts(t_id, group_id)
-        res = f"📊 **DANH SÁCH NỢ CỦA @{tags[0].upper()}**\n\n"
+        res = f"📊 **DANH SÁCH NỢ CỦA @{t_name.upper()}**\n\n"
         has = False
-        for i in they_owe: res += f"• {tags[0]} nợ **{i['name']}**: `{format_currency(i['amount'])}`\n"; has = True
-        for i in owe_them: res += f"• **{i['name']}** nợ {tags[0]}: `{format_currency(i['amount'])}`\n"; has = True
-        if not has: res = f"✅ **@{tags[0]}** hiện không có nợ."
+        for i in they_owe: res += f"• {t_name} nợ **{i['name']}**: `{format_currency(i['amount'])}`\n"; has = True
+        for i in owe_them: res += f"• **{i['name']}** nợ {t_name}: `{format_currency(i['amount'])}`\n"; has = True
+        if not has: res = f"✅ **@{t_name}** hiện không có nợ."
         await update.message.reply_text(res, parse_mode="Markdown"); return
 
     if context.args and context.args[0] == "all":
@@ -192,31 +173,27 @@ async def lichsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type == "private":
         await update.message.reply_text("❌ Lệnh này chỉ khả dụng trong Group chat.")
         return
-    txs = get_debts_in_group(update.message.chat.id)
-    user_id = update.message.from_user.id
+    
+    group_id, user_id = update.message.chat.id, update.message.from_user.id
     target_username = context.args[0].replace("@", "") if context.args else None
+    
+    # Lấy giao dịch liên quan đến mình bằng SQL để tối ưu hiệu suất
+    my_raw_txs = get_transactions_by_user(group_id, user_id)
 
     if target_username:
-        filtered_txs = []
-        last_settled_id = 0
-        for t in txs:
-            if "[TẤT TOÁN]" in t['reason']:
-                is_me = (t['creditor_id'] == user_id or t['debtor_id'] == user_id)
-                is_target = (t['creditor_name'].lower() == target_username.lower() or t['debtor_name'].lower() == target_username.lower())
-                if is_me and is_target:
-                    last_settled_id = max(last_settled_id, t['id'])
+        target_id = get_user_id_or_pseudo(target_username)
+        # Lọc giao dịch giữa mình và Target
+        filtered_raw = [t for t in my_raw_txs if t['creditor_id'] == target_id or t['debtor_id'] == target_id]
         
-        for t in txs:
-            is_me = (t['creditor_id'] == user_id or t['debtor_id'] == user_id)
-            is_target = (t['creditor_name'].lower() == target_username.lower() or t['debtor_name'].lower() == target_username.lower())
-            if is_me and is_target and t['id'] >= last_settled_id:
-                filtered_txs.append(t)
-                
-        my_txs = sorted(filtered_txs, key=lambda x: x['id'], reverse=True)[:20]
+        last_settled_id = 0
+        for t in filtered_raw:
+            if "[TẤT TOÁN]" in t['reason']:
+                last_settled_id = max(last_settled_id, t['id'])
+        
+        my_txs = [t for t in filtered_raw if t['id'] >= last_settled_id][:20]
         title = f"📜 **LỊCH SỬ NỢ VỚI @{target_username.upper()}**\n\n"
     else:
         peers_last_settled = {}
-        my_raw_txs = [t for t in txs if t['creditor_id'] == user_id or t['debtor_id'] == user_id]
         for t in my_raw_txs:
             if "[TẤT TOÁN]" in t['reason']:
                 peer = t['creditor_name'] if t['debtor_id'] == user_id else t['debtor_name']
@@ -229,7 +206,7 @@ async def lichsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filtered_txs.append(t)
 
         limit = 50 if (context.args and context.args[0] == "all") else 15
-        my_txs = sorted(filtered_txs, key=lambda x: x['id'], reverse=True)[:limit]
+        my_txs = filtered_txs[:limit]
         title = "📜 **LỊCH SỬ GIAO DỊCH**\n\n"
 
     if not my_txs:
@@ -238,13 +215,8 @@ async def lichsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     res = title
     for t in my_txs:
-        date_str = t['created_at'].split(".")[0] if isinstance(t['created_at'], str) else t['created_at'].strftime("%Y-%m-%d %H:%M")
-        creator_name = "Chủ nợ" if t['created_by'] == t['creditor_id'] else "Người nợ"
-        if t['created_by'] not in [t['creditor_id'], t['debtor_id']]:
-            creator_name = "Admin/Khác"
-        res += f"ID: {t['id']} | **{t['debtor_name']}** no **{t['creditor_name']}**: {format_currency(t['amount'])}\n"
-        res += f"Ly do: {t['reason']}\n"
-        res += f"{date_str} (Boi: {creator_name})\n\n"
+        date_str = t['created_at'].split(".")[0] if isinstance(t['created_at'], str) else t['created_at'].strftime("%H:%M %d/%m")
+        res += f"• `{date_str}` | **{t['debtor_name']}** nợ **{t['creditor_name']}** | {t['reason']} : `{format_currency(t['amount'])}`\n"
     
     await update.message.reply_text(res, parse_mode="Markdown")
 
@@ -352,7 +324,7 @@ async def allpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target_username = tags[0]
-    target_id = find_user_id_by_username(target_username)
+    target_id = get_user_id_or_pseudo(target_username)
     if target_id is None:
         await update.message.reply_text("❌ Không tìm thấy dữ liệu.")
         return
@@ -486,6 +458,9 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.delete_message(chat_id, message_id - i)
             deleted += 1
+            # Rate limit protection
+            if deleted % 5 == 0:
+                await asyncio.sleep(0.5)
         except: continue
     info_msg = await context.bot.send_message(chat_id, f"🧹 Đã dọn dẹp {deleted} tin nhắn!")
     await asyncio.sleep(3)

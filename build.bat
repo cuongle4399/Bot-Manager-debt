@@ -1,1 +1,1 @@
-pyinstaller --onefile --windowed --hidden-import=pytz --collect-data pytz --copy-metadata pytz --hidden-import=tzdata --collect-data tzdata --copy-metadata tzdata bot.py
+pyinstaller --onefile --console --name "BotQuanLyNo" --clean --hidden-import=pytz --collect-data pytz --copy-metadata pytz --hidden-import=tzdata --collect-data tzdata --copy-metadata tzdata bot.py

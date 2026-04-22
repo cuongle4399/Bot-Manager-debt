@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import hashlib
 from datetime import datetime
 from config import DATABASE_PATH
 from contextlib import contextmanager
@@ -49,6 +50,23 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users ON transactions(creditor_id, debtor_id)")
         conn.commit()
 
+def find_user_id_by_username(username):
+    if not username: return None
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM users WHERE username = ?', (username.lower().replace("@", ""),))
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+def get_user_id_or_pseudo(username):
+    if not username: return None
+    username = username.lower().replace("@", "")
+    real_id = find_user_id_by_username(username)
+    if real_id:
+        return real_id
+    # Pseudo-ID logic (negative hash)
+    return -(int(hashlib.md5(username.encode()).hexdigest()[:12], 16))
+
 def update_user(user_id, username, full_name):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -56,14 +74,14 @@ def update_user(user_id, username, full_name):
             INSERT OR REPLACE INTO users (user_id, username, full_name, last_seen)
             VALUES (?, ?, ?, ?)
         ''', (user_id, username.lower() if username else None, full_name, datetime.now()))
+        
+        # Đồng bộ hóa công nợ cũ của người dùng này nếu trước đó dùng pseudo-ID (từ username)
+        if username:
+            pseudo_id = get_user_id_or_pseudo(username)
+            cursor.execute("UPDATE transactions SET creditor_id = ? WHERE creditor_id = ?", (user_id, pseudo_id))
+            cursor.execute("UPDATE transactions SET debtor_id = ? WHERE debtor_id = ?", (user_id, pseudo_id))
+            cursor.execute("UPDATE transactions SET created_by = ? WHERE created_by = ?", (user_id, pseudo_id))
         conn.commit()
-
-def find_user_id_by_username(username):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT user_id FROM users WHERE username = ?', (username.lower(),))
-        row = cursor.fetchone()
-        return row[0] if row else None
 
 def save_transaction(group_id, creditor, debtor, amount, reason, raw_message, created_by, message_id):
     with get_db() as conn:
@@ -79,7 +97,16 @@ def save_transaction(group_id, creditor, debtor, amount, reason, raw_message, cr
 
 def get_debts_in_group(group_id):
     with get_db() as conn:
-        return conn.execute('SELECT * FROM transactions WHERE group_id = ?', (group_id,)).fetchall()
+        return conn.execute('SELECT * FROM transactions WHERE group_id = ? ORDER BY id ASC', (group_id,)).fetchall()
+
+def get_transactions_by_user(group_id, user_id):
+    """Lấy giao dịch liên quan đến 1 user trong group, lọc bằng SQL để tối ưu hiệu suất."""
+    with get_db() as conn:
+        return conn.execute('''
+            SELECT * FROM transactions 
+            WHERE group_id = ? AND (creditor_id = ? OR debtor_id = ?)
+            ORDER BY id DESC
+        ''', (group_id, user_id, user_id)).fetchall()
 
 def delete_transaction(transaction_id, user_id, is_admin=False):
     with get_db() as conn:

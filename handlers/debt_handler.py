@@ -30,15 +30,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     usernames, amount, reason, type_sign = parsed
     my_username = (sender.username or "").lower()
-    others = [u for u in usernames if u.lower() != my_username]
+    others = list(dict.fromkeys([u for u in usernames if u.lower() != my_username]))
 
     if not others:
-         await update.message.reply_text("Ban khong the tu ghi no chinh minh!")
+         await update.message.reply_text("Bạn không thể tự ghi nợ chính mình!")
          return
 
+    from database.db_manager import get_user_id_or_pseudo
     for tagged_username in others:
-        real_id = find_user_id_by_username(tagged_username) or 0
-        if real_id != 0 and real_id == sender.id:
+        clean_username = tagged_username.lower()
+        real_id = get_user_id_or_pseudo(clean_username)
+
+        if real_id == sender.id:
             continue
 
         if type_sign == "-":
@@ -61,7 +64,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = f"✅ **Đã ghi nhận công nợ mới**\n"
     msg += f"📝 Lý do: {reason}\n"
-    msg += f"💰 Số tiền: {format_currency(amount)}/người\n\n"
+    msg += f"💰 Số tiền: {format_currency(amount)} / người\n\n"
     
     if type_sign == "-":
         msg += f"👤 Người được trả: {sender.mention_html()}\n"
