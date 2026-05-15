@@ -120,6 +120,14 @@ def delete_transaction(transaction_id, user_id, is_admin=False):
         conn.commit()
         return success
 
+def delete_transactions_by_message(message_id, user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM transactions WHERE message_id = ? AND created_by = ?', (message_id, user_id))
+        count = cursor.rowcount
+        conn.commit()
+        return count
+
 def get_all_groups():
     with get_db() as conn:
         rows = conn.execute('SELECT DISTINCT group_id FROM transactions').fetchall()

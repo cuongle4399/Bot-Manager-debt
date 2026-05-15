@@ -1,10 +1,11 @@
 import logging
 import os
 import asyncio
+from datetime import datetime
 from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeAllGroupChats
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, PrefixHandler
 from apscheduler.schedulers.background import BackgroundScheduler
-from config import BOT_TOKEN
+from config import BOT_TOKEN, OWNER_ID, DATABASE_PATH
 from database.db_manager import init_db, get_all_groups
 from handlers import command_handler, debt_handler
 from services.debt_service import calculate_group_debts
@@ -28,13 +29,16 @@ async def post_init(application):
     def run_weekly_job():
         asyncio.run_coroutine_threadsafe(send_weekly_reminders(application), application.loop)
 
+    def run_backup_job():
+        asyncio.run_coroutine_threadsafe(backup_database(application), application.loop)
+
     scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
     scheduler.add_job(run_weekly_job, 'cron', day_of_week='sun', hour=12, minute=0)
+    scheduler.add_job(run_backup_job, 'cron', hour='0,18', minute=0) # Backup lúc 0h và 18h hàng ngày
     scheduler.start()
 
     # Gửi thông báo Bot online cho Sư phụ
     try:
-        from config import OWNER_ID
         await application.bot.send_message(
             chat_id=OWNER_ID, 
             text="🚀 **Hệ thống Quản Lý Nợ khởi động thành công!**\n\nMọi chức năng đang chờ lệnh.", 
@@ -42,6 +46,24 @@ async def post_init(application):
         )
     except Exception as e:
         logging.error(f"Loi bao online cho owner: {e}")
+
+async def backup_database(application):
+    try:
+        if not os.path.exists(DATABASE_PATH):
+            logging.error(f"Khong tim thay file database tai {DATABASE_PATH}")
+            return
+            
+        with open(DATABASE_PATH, 'rb') as db_file:
+            await application.bot.send_document(
+                chat_id=OWNER_ID,
+                document=db_file,
+                filename=f"backup_debt_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                caption=f"📦 **BACKUP DATABASE ĐỊNH KỲ**\n⏰ Thời gian: `{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}`\n\n_File này dùng để khôi phục dữ liệu khi VPS gặp sự cố._",
+                parse_mode="Markdown"
+            )
+        logging.info("Da gui file backup cho owner thành công.")
+    except Exception as e:
+        logging.error(f"Loi khi gui backup database: {e}")
 
 
 async def send_weekly_reminders(application):

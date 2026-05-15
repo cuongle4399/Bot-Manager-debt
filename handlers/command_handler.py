@@ -20,6 +20,7 @@ from database.db_manager import (
     get_debts_in_group, 
     get_transactions_by_user,
     delete_transaction, 
+    delete_transactions_by_message,
     save_transaction,
     clear_group_data
 )
@@ -267,40 +268,51 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.message.chat.id
     user_id = update.message.from_user.id
     
+    # 1. Trường hợp Undo theo Reply tin nhắn
     if update.message.reply_to_message:
         replied_msg_id = update.message.reply_to_message.message_id
-        txs = get_debts_in_group(group_id)
-        target_tx = next((t for t in txs if t['message_id'] == replied_msg_id), None)
         
-        if not target_tx:
-            await update.message.reply_text("Khong tim thay giao dich lien quan den tin nhan nay.")
-            return
-            
-        if target_tx['created_by'] != user_id:
-            await update.message.reply_text("Ban chi co the hoan tac don no do chinh ban tao.")
-            return
-            
-        if delete_transaction(target_tx['id'], user_id):
-            await update.message.reply_text(f"HOAN TAC THANH CONG: Da xoa don ID {target_tx['id']} ({format_currency(target_tx['amount'])})")
+        # Xóa tất cả transactions có cùng message_id đó (đề phòng tag nhiều người)
+        deleted_count = delete_transactions_by_message(replied_msg_id, user_id)
+        
+        if deleted_count > 0:
+            await update.message.reply_text(f"✅ **HOÀN TÁC THÀNH CÔNG**\nĐã xóa `{deleted_count}` đơn nợ liên quan đến tin nhắn này.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ Không tìm thấy giao dịch hợp lệ do bạn tạo để hoàn tác.")
         return
 
+    # 2. Trường hợp Undo lệnh cuối cùng (không reply)
     txs = get_debts_in_group(group_id)
-    my_last_tx = None
+    if not txs:
+        await update.message.reply_text("Chưa có giao dịch nào trong nhóm này.")
+        return
+
+    # Tìm message_id của giao dịch gần nhất do user này tạo
+    last_msg_id = None
+    last_tx_info = None
+    
     for t in sorted(txs, key=lambda x: x['id'], reverse=True):
         if t['created_by'] == user_id:
-            my_last_tx = t
+            last_msg_id = t['message_id']
+            last_tx_info = t
             break
             
-    if not my_last_tx:
+    if not last_msg_id:
         await update.message.reply_text("Bạn chưa tạo giao dịch nào gần đây để hoàn tác.")
         return
         
-    if delete_transaction(my_last_tx['id'], user_id):
-        msg = f"HOAN TAC THANH CONG\n"
-        msg += f"Da xoa don: {my_last_tx['id']}\n"
-        msg += f"Noi dung: {my_last_tx['debtor_name']} no {my_last_tx['creditor_name']} ({format_currency(my_last_tx['amount'])})\n"
-        msg += f"Ly do: {my_last_tx['reason']}"
-        await update.message.reply_text(msg)
+    # Xóa tất cả transactions có chung message_id đó
+    deleted_count = delete_transactions_by_message(last_msg_id, user_id)
+    
+    if deleted_count > 0:
+        msg = f"✅ **HOÀN TÁC THÀNH CÔNG**\n"
+        msg += f"• Đã xóa `{deleted_count}` đơn nợ từ lệnh cuối cùng.\n"
+        if deleted_count == 1:
+            msg += f"• Nội dung: **{last_tx_info['debtor_name']}** nợ **{last_tx_info['creditor_name']}** (`{format_currency(last_tx_info['amount'])}`)\n"
+        msg += f"• Lý do: {last_tx_info['reason']}"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ Lỗi: Không thể hoàn tác giao dịch.")
 
 async def nhacno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type == "private":
